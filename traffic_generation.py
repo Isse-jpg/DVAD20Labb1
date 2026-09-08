@@ -73,9 +73,10 @@ def genDCTraffic(
 
         client_cmd = f"iperf -c {sink_ip} -p {port} -n {flow_size}"
 
-        process = traffic_source.popen(client_cmd)
         start_time = time.monotonic()
-        thread = threading.Thread(target=monitor_flow(i,
+        process = traffic_source.popen(client_cmd)
+        thread = threading.Thread(target=monitor_flow,
+                                             args=(i,
                                              process,
                                              start_time,
                                              flow_size,
