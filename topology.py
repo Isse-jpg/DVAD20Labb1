@@ -1,4 +1,8 @@
 from mininet.topo import Topo
+from mininet.net import Mininet
+from mininet.node import OVSController
+from mininet.link import TCLink
+from mininet.cli import CLI
 
 class MyTopo(Topo):
     def build(self):
@@ -23,4 +27,3 @@ class MyTopo(Topo):
                     self.addLink(UsedH, SecondSw, bw=20, delay='1ms')
                     UsedHosts.append(UsedH)
                     h_number+=1
-
