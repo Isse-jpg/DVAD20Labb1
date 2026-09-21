@@ -1,44 +1,36 @@
 import time
+import subprocess
 import numpy as np
 from numpy.random import Generator
-from mininet.net import Node 
+from mininet.net import Node
 import random
 from mininet.util import pmonitor
 import threading
-
+import capture
+import signal
 WEB_SEARCH_CDF = np.array([
-    (0, 0.0), (10000, 0.18), (20000, 0.3), (30000, 0.6), 
+
+    (0, 0.0), (10000, 0.18), (20000, 0.3), (30000, 0.6),
     (50000, 0.9), (80000, 0.95), (100000, 1.0)
 ])
 
 DATA_MINING_CDF = np.array([
-    (180, 0.1), (300, 0.2), (460, 0.3), (570, 0.4), (590, 0.5), 
-    (600, 0.6), (650, 0.7), (710, 0.8), (810, 0.9), (910, 1.0) ])
+    (180, 0.1), (300, 0.2), (460, 0.3), (570, 0.4), (590, 0.5),
+    (600, 0.6), (650, 0.7), (710, 0.8), (810, 0.9), (910, 1.0)])
 
 
 WEB_SEARCH = 1
 DATA_MINING = 2
 
-def monitor_flow(flow_id, process, start_time, flow_size, results):
-    process.wait()
 
-    stop_time = time.monotonic()
-    duration = stop_time - start_time
-
-    results[flow_id] = {
-        "size": flow_size,
-        "duration": duration
-    }
-
-def gen_size(traffic_type:int, size:int, rng:Generator):
+def gen_size(traffic_type: int, size: int, rng: Generator):
     p = rng.random(size)
     if traffic_type == WEB_SEARCH:
         flow_size = np.interp(p, WEB_SEARCH_CDF[:, 1], WEB_SEARCH_CDF[:, 0])
     elif traffic_type == DATA_MINING:
-        flow_size = np.interp(p, DATA_MINING_CDF[:, 1], DATA_MINING_CDF[:,0])
+        flow_size = np.interp(p, DATA_MINING_CDF[:, 1], DATA_MINING_CDF[:, 0])
     else:
         raise ValueError("Unknown traffic type")
-
 
     return np.round(flow_size)
 
@@ -49,47 +41,52 @@ def genDCTraffic(
     traffic_type: int,
     traffic_intensity: int,
     traffic_generation_time: int,
-    rng: Generator
+    rng: Generator,
+    pcap_path: str = "/tmp/traffic.pcap",
 ):
     total_traffic = int(traffic_intensity * traffic_generation_time)
-
     if total_traffic <= 0:
         return {}
-
     time_interval = traffic_generation_time / total_traffic
-    interp_traffic = gen_size(traffic_type, total_traffic, rng)
-
+    flow_sizes = gen_size(traffic_type, total_traffic, rng)
     sink_ip = traffic_sink.IP()
-    port = rng.integers(10000, 60001)
+    port = int(rng.integers(10000, 60001))
 
+    intf = f"{traffic_source.name}-eth0"
     server_process = traffic_sink.popen(f"iperf -s -p {port}")
-    time.sleep(0.5)
-    active_processes = []
-    measurement_threads = []
 
-    results = {}
-    for i in range(total_traffic):
-        flow_size = int(interp_traffic[i])
+    tshark_process = traffic_source.popen(
+        f"tshark -l -i {intf} -w {pcap_path} tcp port {port}",
+        stderr=subprocess.PIPE,
+        stdout=subprocess.PIPE
+    )    #allow tshark to start
+    time.sleep(2)
+    if tshark_process.poll() is not None:
+        _, stderr = tshark_process.communicate()
+        server_process.terminate()
+        raise RuntimeError(f"tshark kraschade vid start! Felmeddelande: {stderr.decode('utf-8', errors='ignore')}")
+    client_processes = []
 
-        client_cmd = f"iperf -c {sink_ip} -p {port} -n {flow_size}"
+    try:
+        for flow_id in range(total_traffic):
+            flow_size = int(flow_sizes[flow_id])
+            client_cmd = f"iperf -c {sink_ip} -p {port} -n {flow_size} -N"
 
-        start_time = time.monotonic()
-        process = traffic_source.popen(client_cmd)
-        thread = threading.Thread(target=monitor_flow,
-                                             args=(i,
-                                             process,
-                                             start_time,
-                                             flow_size,
-                                             results))
+            p = traffic_source.popen(client_cmd)
+            client_processes.append(p)
 
-        thread.start()
-        measurement_threads.append(thread)
-        active_processes.append(process)
-        time.sleep(time_interval)
+            time.sleep(time_interval)
 
+        for p in client_processes:
+            p.wait()
 
-    for thread in measurement_threads:
-        thread.join()
+    finally:
+        server_process.terminate()
+        server_process.wait()
 
-    server_process.terminate()
-    return results
+        #for graceful shutdown
+        tshark_process.send_signal(signal.SIGINT)
+        tshark_process.wait()
+        time.sleep(0.5)
+
+    return capture.monitor_flow_pyshark(pcap_path)
