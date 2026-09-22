@@ -6,13 +6,15 @@ import traffic_generation
 import csv
 import random
 import numpy as np
+import sys
+import argparse
 
 DATA_MINING = 2 
 WEB_SEARCH  = 1
 PCAP_PATH = "/tmp/traffic.pcap"
 
-def run_test(traffic_type:int, traffic_intensity:int, traffic_generation_time:int, seed:int, source_name: str, sink_name:str):
-    MyTopology = topology.MyTopo()
+def run_test(traffic_type:int, traffic_intensity:int, traffic_generation_time:int, seed:int, source_name: str, sink_name:str,node_bw:int):
+    MyTopology = topology.MyTopo(node_bw)
     net = Mininet(MyTopology)
     net.start()
     net.pingAll()
@@ -29,7 +31,7 @@ def run_test(traffic_type:int, traffic_intensity:int, traffic_generation_time:in
     net.stop()
     return result
 
-def evaluate_test(traffic_type:int, traffic_intensity_max:int, iterations:int, csv_filename:str, summary_filename:str):
+def evaluate_test(traffic_type:int, traffic_intensity_max:int, iterations:int, csv_filename:str, summary_filename:str, node_bw:int):
     mean_result = []
 
     #create file if it doesnt exist
@@ -47,7 +49,7 @@ def evaluate_test(traffic_type:int, traffic_intensity_max:int, iterations:int, c
             sink_name   = f"h_{source_sink_num[1]}"
             seed = random.randint(0, 100000) 
             
-            run_test(traffic_type, i, 10, seed, source_name, sink_name)
+            run_test(traffic_type, i, 10, seed, source_name, sink_name,node_bw)
             run_data = data_analysis.tshark_get_data_from_pcap(PCAP_PATH)
             
             with open(csv_filename, mode='a', newline='') as f:
@@ -70,11 +72,59 @@ def evaluate_test(traffic_type:int, traffic_intensity_max:int, iterations:int, c
     data_analysis.calculate_fct_ci(mean_result, summary_filename)
 
 
-fct_data_mining = "fct_data_mining.csv"
-summary_data_mining = "summary_data_mining.txt"
-evaluate_test(DATA_MINING,5,2,fct_data_mining,summary_data_mining)
 
 
-fct_web_search = "fct_web_search.csv"
-summary_web_search = "summary_web_search.txt"
-evaluate_test(WEB_SEARCH,10,10,fct_web_search,summary_web_search)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run Mininet simulation for Flow Completion Time (FCT).")
+    
+    parser.add_argument(
+        "--type", 
+        choices=["web", "data", "both"], 
+        default="both", 
+        help="Which traffic type to run (web, data, or both)."
+    )
+    parser.add_argument(
+        "--intensity", 
+        type=int, 
+        default=10, 
+        help="Maximum traffic intensity (default: 10)."
+    )
+    parser.add_argument(
+        "--iterations", 
+        type=int, 
+        default=10, 
+        help="Number of iterations per intensity level (default: 10)."
+    )
+    
+    parser.add_argument(
+        "--bandwidth", 
+        type=int, 
+        default=20, 
+        help="Node bandwidth (in Mbps, default 20)"
+    )
+    args = parser.parse_args()
+
+    print(f"Starting test: Type={args.type}, Max Intensity={args.intensity}, Iterations={args.iterations} Node bandwidth={args.bandwidth} Mbps")
+
+    if args.type in ["data", "both"]:
+        print("\n--- Running Data Mining ---")
+        evaluate_test(
+            traffic_type=DATA_MINING, 
+            traffic_intensity_max=args.intensity, 
+            iterations=args.iterations, 
+            csv_filename="fct_data_mining.csv", 
+            summary_filename="summary_data_mining.txt",
+            node_bw=args.bandwidth
+        )
+
+    if args.type in ["web", "both"]:
+        print("\n--- Running Web Search ---")
+        evaluate_test(
+            traffic_type=WEB_SEARCH, 
+            traffic_intensity_max=args.intensity, 
+            iterations=args.iterations, 
+            csv_filename="fct_web_search.csv", 
+            summary_filename="summary_web_search.txt",
+            node_bw=args.bandwidth
+        )
+
