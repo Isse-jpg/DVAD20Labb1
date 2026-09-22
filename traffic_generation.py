@@ -3,10 +3,6 @@ import subprocess
 import numpy as np
 from numpy.random import Generator
 from mininet.net import Node
-import random
-from mininet.util import pmonitor
-import threading
-import capture
 import signal
 WEB_SEARCH_CDF = np.array([
 
@@ -21,7 +17,7 @@ DATA_MINING_CDF = np.array([
 
 WEB_SEARCH = 1
 DATA_MINING = 2
-
+PCAP_PATH = "/tmp/traffic.pcap"
 
 def gen_size(traffic_type: int, size: int, rng: Generator):
     p = rng.random(size)
@@ -42,7 +38,7 @@ def genDCTraffic(
     traffic_intensity: int,
     traffic_generation_time: int,
     rng: Generator,
-    pcap_path: str = "/tmp/traffic.pcap",
+    pcap_path: str = PCAP_PATH
 ):
     total_traffic = int(traffic_intensity * traffic_generation_time)
     if total_traffic <= 0:
@@ -64,7 +60,7 @@ def genDCTraffic(
     if tshark_process.poll() is not None:
         _, stderr = tshark_process.communicate()
         server_process.terminate()
-        raise RuntimeError(f"tshark kraschade vid start! Felmeddelande: {stderr.decode('utf-8', errors='ignore')}")
+        raise RuntimeError(f"tshark crasched! Error: {stderr.decode('utf-8', errors='ignore')}")
     client_processes = []
 
     try:
@@ -88,5 +84,3 @@ def genDCTraffic(
         tshark_process.send_signal(signal.SIGINT)
         tshark_process.wait()
         time.sleep(0.5)
-
-    return capture.monitor_flow_pyshark(pcap_path)
