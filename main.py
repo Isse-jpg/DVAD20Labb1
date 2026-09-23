@@ -1,4 +1,5 @@
 from mininet.net import Mininet
+from mininet.log import setLogLevel
 import topology
 import data_analysis
 import os
@@ -14,6 +15,7 @@ WEB_SEARCH  = 1
 PCAP_PATH = "/tmp/traffic.pcap"
 
 def run_test(traffic_type:int, traffic_intensity:int, traffic_generation_time:int, seed:int, source_name: str, sink_name:str,node_bw:int):
+    setLogLevel('error')
     MyTopology = topology.MyTopo(node_bw)
     net = Mininet(MyTopology)
     net.start()
@@ -31,16 +33,19 @@ def run_test(traffic_type:int, traffic_intensity:int, traffic_generation_time:in
     net.stop()
     return result
 
-def evaluate_test(traffic_type:int, traffic_intensity_max:int, iterations:int, csv_filename:str, summary_filename:str, node_bw:int):
+def evaluate_test(traffic_type:int,traffic_intensity_min:int, traffic_intensity_max:int, iterations:int, csv_filename:str, summary_filename:str, node_bw:int):
     mean_result = []
 
+    if traffic_intensity_max <= 0 or traffic_intensity_min <=0:
+        print("invalid traffic generation size!")
+        return
     #create file if it doesnt exist
     if not os.path.exists(csv_filename):
         with open(csv_filename, mode='w', newline='') as f:
             writer = csv.writer(f)
             writer.writerow(["Traffic_Intensity", "Run_Number", "Source", "Sink", "Stream_ID", "FCT", "Total_Bytes"])
 
-    for i in range(1, traffic_intensity_max+1):
+    for i in range(traffic_intensity_min, traffic_intensity_max+1):
         iteration_fcts = []
         for j in range(1, iterations+1):
         
@@ -63,7 +68,7 @@ def evaluate_test(traffic_type:int, traffic_intensity_max:int, iterations:int, c
                     
                     iteration_fcts.append(fct)
                     
-            print(f"[Logg] Intensity {i} done, iteration {j}. Data saved.")
+            print(f"[Log] Intensity {i} done, iteration {j}. Data saved.")
 
         if iteration_fcts:
             mean_result.append(np.mean(iteration_fcts))
@@ -82,9 +87,16 @@ if __name__ == "__main__":
         choices=["web", "data", "both"], 
         default="both", 
         help="Which traffic type to run (web, data, or both)."
-    )
+    ) 
     parser.add_argument(
-        "--intensity", 
+        "--min_intensity", 
+        type=int, 
+        default=1, 
+        help="Minimum traffic intensity (default: 1)."
+    )
+
+    parser.add_argument(
+        "--max_intensity", 
         type=int, 
         default=10, 
         help="Maximum traffic intensity (default: 10)."
@@ -104,13 +116,14 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    print(f"Starting test: Type={args.type}, Max Intensity={args.intensity}, Iterations={args.iterations} Node bandwidth={args.bandwidth} Mbps")
+    print(f"Starting test: Type={args.type}, Min intensity={args.min_intensity}, Max Intensity={args.max_intensity}, Iterations={args.iterations} Node bandwidth={args.bandwidth} Mbps")
 
     if args.type in ["data", "both"]:
         print("\n--- Running Data Mining ---")
         evaluate_test(
             traffic_type=DATA_MINING, 
-            traffic_intensity_max=args.intensity, 
+            traffic_intensity_min=args.min_intensity,
+            traffic_intensity_max=args.max_intensity, 
             iterations=args.iterations, 
             csv_filename="fct_data_mining.csv", 
             summary_filename="summary_data_mining.txt",
@@ -121,7 +134,8 @@ if __name__ == "__main__":
         print("\n--- Running Web Search ---")
         evaluate_test(
             traffic_type=WEB_SEARCH, 
-            traffic_intensity_max=args.intensity, 
+            traffic_intensity_min=args.min_intensity,
+            traffic_intensity_max=args.max_intensity, 
             iterations=args.iterations, 
             csv_filename="fct_web_search.csv", 
             summary_filename="summary_web_search.txt",

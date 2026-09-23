@@ -52,10 +52,10 @@ def genDCTraffic(
     server_process = traffic_sink.popen(f"iperf -s -p {port}")
 
     tshark_process = traffic_source.popen(
-        f"tshark -l -i {intf} -w {pcap_path} tcp port {port}",
-        stderr=subprocess.PIPE,
-        stdout=subprocess.PIPE
-    )    #allow tshark to start
+            f"tshark -q -l -i {intf} -w {pcap_path} tcp port {port}",
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+    )
     time.sleep(2)
     if tshark_process.poll() is not None:
         _, stderr = tshark_process.communicate()
