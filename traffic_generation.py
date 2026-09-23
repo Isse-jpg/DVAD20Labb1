@@ -1,5 +1,6 @@
 import time
 import subprocess
+import os
 import numpy as np
 from numpy.random import Generator
 from mininet.net import Node
@@ -73,9 +74,19 @@ def genDCTraffic(
 
             time.sleep(time_interval)
 
-        for p in client_processes:
-            p.wait()
+        for i, p in enumerate(client_processes):
+            try:
+                p.wait(timeout=60)
+            except subprocess.TimeoutExpired:
+                print(f"[Warning] iperf-client {i} got stuck (packet loss). stopping flow.")
+                p.kill()
+    
+                if os.path.exists(PCAP_PATH):
+                                        os.remove(PCAP_PATH)
 
+                tshark_process.send_signal(signal.SIGINT)
+                tshark_process.wait()
+                raise RuntimeError("network flow stuck in timeout.")
     finally:
         server_process.terminate()
         server_process.wait()

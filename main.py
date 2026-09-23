@@ -24,13 +24,15 @@ def run_test(traffic_type:int, traffic_intensity:int, traffic_generation_time:in
 
     source     = net.getNodeByName(source_name)
     sink       = net.getNodeByName(sink_name)
-    result= traffic_generation.genDCTraffic(traffic_source=source,
+    try:
+        result= traffic_generation.genDCTraffic(traffic_source=source,
                                              traffic_sink=sink,
                                              traffic_type=traffic_type,
                                              traffic_intensity=traffic_intensity,
                                              traffic_generation_time=traffic_generation_time,
                                              rng=rng,pcap_path=PCAP_PATH)
-    net.stop()
+    finally:
+        net.stop()
     return result
 
 def evaluate_test(traffic_type:int,traffic_intensity_min:int, traffic_intensity_max:int, iterations:int, csv_filename:str, summary_filename:str, node_bw:int):
@@ -48,28 +50,36 @@ def evaluate_test(traffic_type:int,traffic_intensity_min:int, traffic_intensity_
     for i in range(traffic_intensity_min, traffic_intensity_max+1):
         iteration_fcts = []
         for j in range(1, iterations+1):
+            success = False
         
-            source_sink_num = random.sample(range(1, 16), 2)
-            source_name = f"h_{source_sink_num[0]}"
-            sink_name   = f"h_{source_sink_num[1]}"
-            seed = random.randint(0, 100000) 
-            
-            run_test(traffic_type, i, 10, seed, source_name, sink_name,node_bw)
-            run_data = data_analysis.tshark_get_data_from_pcap(PCAP_PATH)
-            
-            with open(csv_filename, mode='a', newline='') as f:
-                writer = csv.writer(f)
-                
-                for stream_id, data in run_data.items():
-                    fct = data["fct"]
-                    total_bytes = data["total_bytes"]
+            while not success:
+                try:
+                    source_sink_num = random.sample(range(1, 16), 2)
+                    source_name = f"h_{source_sink_num[0]}"
+                    sink_name   = f"h_{source_sink_num[1]}"
+                    seed = random.randint(0, 100000) 
                     
-                    writer.writerow([i, j, source_name, sink_name, stream_id, fct, total_bytes])
+                    run_test(traffic_type, i, 10, seed, source_name, sink_name,node_bw)
+                    run_data = data_analysis.tshark_get_data_from_pcap(PCAP_PATH)
                     
-                    iteration_fcts.append(fct)
-                    
-            print(f"[Log] Intensity {i} done, iteration {j}. Data saved.")
+                    with open(csv_filename, mode='a', newline='') as f:
+                        writer = csv.writer(f)
+                        
+                        for stream_id, data in run_data.items():
+                            fct = data["fct"]
+                            total_bytes = data["total_bytes"]
+                            
+                            writer.writerow([i, j, source_name, sink_name, stream_id, fct, total_bytes])
+                            
+                            iteration_fcts.append(fct)
+                            
+                    print(f"[Log] Intensity {i} done, iteration {j}. Data saved.")
+                    success = True
 
+                except Exception as e:
+                    print(f"[Warning] iteration {j}, intensity {i} failed. Retrying..... ")
+
+            
         if iteration_fcts:
             mean_result.append(np.mean(iteration_fcts))
         
