@@ -47,51 +47,49 @@ def genDCTraffic(
     time_interval = traffic_generation_time / total_traffic
     flow_sizes = gen_size(traffic_type, total_traffic, rng)
     sink_ip = traffic_sink.IP()
-    port = int(rng.integers(10000, 60001))
 
     intf = f"{traffic_source.name}-eth0"
-    server_process = traffic_sink.popen(f"iperf -s -p {port}")
+    server_process = traffic_sink.popen(f"iperf -s &",
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
 
     tshark_process = traffic_source.popen(
-            f"tshark -q -l -i {intf} -w {pcap_path} tcp port {port}",
+            f"tshark -q -l -i {intf} -w {pcap_path} tcp",
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
     )
     time.sleep(2)
-    if tshark_process.poll() is not None:
-        _, stderr = tshark_process.communicate()
-        server_process.terminate()
-        raise RuntimeError(f"tshark crasched! Error: {stderr.decode('utf-8', errors='ignore')}")
     client_processes = []
-
     try:
         for flow_id in range(total_traffic):
             flow_size = int(flow_sizes[flow_id])
-            client_cmd = f"iperf -c {sink_ip} -p {port} -n {flow_size} -N"
+            client_cmd = f"iperf -c {sink_ip} -n {flow_size}"
 
-            p = traffic_source.popen(client_cmd)
+            p = traffic_source.popen(
+                client_cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
             client_processes.append(p)
 
             time.sleep(time_interval)
 
-        for i, p in enumerate(client_processes):
-            try:
-                p.wait(timeout=60)
-            except subprocess.TimeoutExpired:
-                print(f"[Warning] iperf-client {i} got stuck (packet loss). stopping flow.")
-                p.kill()
-    
-                if os.path.exists(PCAP_PATH):
-                                        os.remove(PCAP_PATH)
-
-                tshark_process.send_signal(signal.SIGINT)
-                tshark_process.wait()
-                raise RuntimeError("network flow stuck in timeout.")
+        for p in client_processes:
+            p.wait(timeout=5)
+                    
     finally:
-        server_process.terminate()
-        server_process.wait()
+        for p in client_processes:
+            p.kill()
 
-        #for graceful shutdown
+        server_process.terminate()
+        try:
+            server_process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            server_process.kill()
+
         tshark_process.send_signal(signal.SIGINT)
-        tshark_process.wait()
-        time.sleep(0.5)
+        try:
+            tshark_process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            tshark_process.kill()
+            

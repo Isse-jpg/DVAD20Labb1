@@ -2,3 +2,4 @@ mininet
 scipy
 numpy
 pyshark
+matplotlib
